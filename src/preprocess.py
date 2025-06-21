@@ -8,6 +8,44 @@ ROOT_DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
 ROOT_RAW_DIR = os.path.join(ROOT_DATA_DIR, 'raw')
 TRAIN_DATA_DIR = os.path.join(ROOT_DATA_DIR, 'preprocessed')
 
+def fix_dataset():
+    '''
+    Dataset after downloading has some errors in th efile names in header files. Filepaths must be corrected in subject 29 and 57 filepaths
+    '''
+    subject_29_path = os.path.join(
+        ROOT_RAW_DIR,
+        "sub-29",
+        "eeg",
+        "sub-29_task-sternberg_eeg.vhdr",
+    )
+    with open(subject_29_path, 'r') as f:
+        lines = f.readlines()
+    lines_cp = lines.copy()
+    lines_cp[5] = "DataFile=sub-29_task-sternberg_eeg.eeg\n"
+    lines_cp[6] = "MarkerFile=sub-29_task-sternberg_eeg.vmrk\n"
+    if lines[5] != lines_cp[5] or lines[6] != lines_cp[6]:
+        print(f"Fixing subject 29 file")
+        with open(subject_29_path, 'w') as f:
+            f.writelines(lines_cp)
+
+    # Fix subject 57
+    subject_57_path = os.path.join(
+        ROOT_RAW_DIR,
+        "sub-57",
+        "eeg",
+        "sub-57_task-sternberg_eeg.vhdr",
+    )
+    with open(subject_57_path, 'r') as f:
+        lines = f.readlines()
+
+    lines_cp = lines.copy()
+    lines_cp[5] = "DataFile=sub-57_task-sternberg_eeg.eeg\n"
+    lines_cp[6] = "MarkerFile=sub-57_task-sternberg_eeg.vmrk\n"
+    if lines[5] != lines_cp[5] or lines[6] != lines_cp[6]:
+        print(f"Fixing subject 57 file")
+        with open(subject_57_path, 'w') as f:
+            f.writelines(lines_cp)
+
 def load_raw_data(file_path=ROOT_RAW_DIR, task='sternberg') -> dict[str, mne.io.Raw]:
     """Load raw EEG data from a file."""
     if not os.path.exists(file_path):
