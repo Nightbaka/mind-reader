@@ -50,7 +50,8 @@ def get_datasets(
     train: float = 0.8,
     val: float = 0.1,
     test: float = 0.1,
-    seed: int = globals.SEED
+    seed: int = globals.SEED,
+    use_zscore: bool = False
 ) -> tuple[Dataset, Dataset, Dataset]:
     """
     Load all .fif epoch files from `epoch_dir`, wrap them in EpochsDataset,
@@ -66,7 +67,7 @@ def get_datasets(
     for fname in all_files:
         path = os.path.join(epoch_dir, fname)
         epochs = mne.read_epochs(path, preload=True, verbose=False)
-        datasets.append(EpochsDataset(epochs))
+        datasets.append(EpochsDataset(epochs, use_zscore=use_zscore))
 
     if train + val + test != 1.0 or train < 0 or val < 0 or test < 0:
         raise ValueError("train, val, and test proportions must sum to 1.0")
@@ -243,7 +244,6 @@ def get_dataloader(
     shuffle: bool = True,
     num_workers: int = 2,
     pin_memory: bool = True,
-    transform = zscore_norm,
 ) -> DataLoader:
     """
     Create a DataLoader for the given dataset.
