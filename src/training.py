@@ -51,7 +51,7 @@ def get_datasets(
     val: float = 0.1,
     test: float = 0.1,
     seed: int = globals.SEED
-) -> DataLoader:
+) -> tuple[Dataset, Dataset, Dataset]:
     """
     Load all .fif epoch files from `epoch_dir`, wrap them in EpochsDataset,
     concatenate, and return a train, valid, test datasets
@@ -84,7 +84,14 @@ def get_datasets(
     val_datasets, test_datasets = train_test_split(
         val_datasets, train_size=val_size, test_size=test_size, shuffle=shuffle, random_state=seed
     )
-    return train_datasets, val_datasets, test_datasets
+    train_ds = (
+        ConcatDataset(train_datasets) if len(train_datasets) > 1 else train_datasets[0]
+    )
+    val_ds = ConcatDataset(val_datasets) if len(val_datasets) > 1 else val_datasets[0] if val_datasets else None
+    test_ds = (
+        ConcatDataset(test_datasets) if len(test_datasets) > 1 else test_datasets[0]
+    )
+    return train_ds, val_ds, test_ds
 
 class DDPMTrainer:
 
@@ -98,9 +105,8 @@ class DDPMTrainer:
         self.save_path = save_path
         self.model_name = model_name
 
-    def ddpm_train_loop(
+    def train(
         self,
-        model: nn.Module,
         train_loader: DataLoader,
         val_loader: DataLoader,
         optimizer: torch.optim.Optimizer,
@@ -113,6 +119,7 @@ class DDPMTrainer:
         """
         Train the DDPM model for a specified number of epochs.
         """
+        model = self.model
         for epoch in range(num_epochs):
             for batch_idx, x in enumerate(train_loader):
                 train_loss = ddpm_train_step(
@@ -132,16 +139,26 @@ class DDPMTrainer:
                 if save_model:
                     torch.save(model.state_dict(), f"ddpm_epoch_{epoch}.pth")
 
+            if verbose:
+                print(f"Epoch {epoch + 1}/{num_epochs}, "
+                      f"Train Loss: {train_loss:.4f}, "
+                      f"Validation Loss: {validation_loss:.4f}")
+            if not self.is_patient(patience):
+                print(f"Model reached its patience!")
+                break
+
+        return self.train_losses, self.validation_losses
+
+
     def is_patient(self, patience: int = 20):
         """
         Check if the training should stop based on validation loss.
         """
         if len(self.validation_losses) < patience:
             return False
-        return all(
-            self.validation_losses[-i] >= self.validation_losses[-i - 1]
-            for i in range(1, patience + 1)
-        )
+        latest_loss = self.validation_losses[-1]
+        previous_losses = self.validation_losses[:-1]
+        return all(latest_loss <= loss for loss in previous_losses[-patience:])
 
     def save_model(self, epoch: int = 0, stats = True):
         """
@@ -190,6 +207,25 @@ def ddpm_eval_step(model: DDPM, x, criterion=F.l1_loss):
         loss = criterion(output, x)
 
     return loss.cpu().item()
+
+def get_loaders(
+    train_dataset: Dataset,
+    val_dataset: Dataset,
+    test_dataset: Dataset,
+    batch_size: int = 32,
+    shuffle: bool = True,
+    num_workers: int = 2,
+    pin_memory: bool = True,
+) -> tuple[DataLoader, DataLoader, DataLoader]:
+    """
+    Create DataLoaders for train, validation, and test datasets.
+    """
+    train_loader = get_dataloader(train_dataset, batch_size, shuffle, num_workers, pin_memory)
+    val_loader = get_dataloader(val_dataset, batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+    test_loader = get_dataloader(test_dataset, batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
+
+    return train_loader, val_loader, test_loader 
+
 
 def get_dataloader(
     dataset: Dataset,
