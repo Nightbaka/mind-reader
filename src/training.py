@@ -135,24 +135,25 @@ class DDPMTrainer:
             train_loss /= len(train_loader)
             self.train_losses.append(train_loss)
             self.validation_losses.append(validation_loss)
+            self.save_stats()
             if validation_loss < min(self.validation_losses[:-1], default=float('inf')):
                 if save_model:
-                    torch.save(model.state_dict(), f"ddpm_epoch_{epoch}.pth")
+                    self.save_model(epoch)
 
             if verbose:
                 print(f"Epoch {epoch + 1}/{num_epochs}, "
                       f"Train Loss: {train_loss:.4f}, "
                       f"Validation Loss: {validation_loss:.4f}")
-            if not self.is_patient(patience):
+            if self.is_not_patient(patience):
                 print(f"Model reached its patience!")
                 break
 
         return self.train_losses, self.validation_losses
 
-
-    def is_patient(self, patience: int = 20):
+    def is_not_patient(self, patience: int = 20):
         """
         Check if the training should stop based on validation loss.
+        Return True if the latest validation loss is not improving for `patience` epochs.
         """
         if len(self.validation_losses) < patience:
             return False
@@ -164,16 +165,22 @@ class DDPMTrainer:
         """
         Save the model state dictionary to a file.
         """
+        print(f"Saving model {self.model_name} at epoch {epoch} to {self.save_path}")
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path)
+        model_path = os.path.join(self.save_path, self.model_name)
+        if not os.path.exists(model_path):
+            os.makedirs(model_path)
+        version_path = os.path.join(model_path, f"{epoch}.pt")
+        torch.save(self.model.state_dict(), version_path)
+
+    def save_stats(self):
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
         model_path = os.path.join(self.save_path, f"{self.model_name}")
         if not os.path.exists(model_path):
             os.makedirs(model_path)
-        version_path = os.path.join(model_path, f"{epoch}.pt")
-        torch.save(self.model.state_dict(), version_path)
-        
-    def save_stats(self):
-        stats_path = os.path.join(self.save_path, f"{self.model_name}", 'stats.json')
+        stats_path = os.path.join(model_path, 'stats.json')
         stats = {
             'train_losses': self.train_losses,
             'validation_losses': self.validation_losses,
