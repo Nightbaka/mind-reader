@@ -147,6 +147,7 @@ def load_to_preprocessed(
 
 
 def main():
+    fix_dataset()
     subjects = load_raw_data()
     print(f"Raw data loaded of {len(subjects)} subjects. Starting preprocessing...")
     load_to_preprocessed(subjects)
