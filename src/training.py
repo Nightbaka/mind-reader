@@ -43,7 +43,7 @@ def zscore_norm(data):
 
     return norm_data
 
-def get_dataset_split(
+def get_datasets(
     epoch_dir: str = PROCESSED_DIR,
     subj_list: list[str] = None,
     shuffle: bool = True,
@@ -70,15 +70,19 @@ def get_dataset_split(
 
     if train + val + test != 1.0 or train < 0 or val < 0 or test < 0:
         raise ValueError("train, val, and test proportions must sum to 1.0")
-    
+
     train_size = int(len(datasets) * train)
     val_size = int(len(datasets) * val)
     test_size = len(datasets) - train_size - val_size
     train_datasets, val_datasets = train_test_split(
-        datasets, train_size=train_size, test_size=val_size + test_size, shuffle=shuffle, seed=seed
+        datasets,
+        train_size=train_size,
+        test_size=val_size + test_size,
+        shuffle=shuffle,
+        random_state=seed,
     )
     val_datasets, test_datasets = train_test_split(
-        val_datasets, train_size=val_size, test_size=test_size, shuffle=shuffle
+        val_datasets, train_size=val_size, test_size=test_size, shuffle=shuffle, random_state=seed
     )
     return train_datasets, val_datasets, test_datasets
 
