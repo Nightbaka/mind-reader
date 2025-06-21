@@ -150,16 +150,19 @@ class DDPMTrainer:
 
         return self.train_losses, self.validation_losses
 
-    def is_not_patient(self, patience: int = 20):
+    def is_not_patient(self, patience: int = 20) -> bool:
         """
-        Check if the training should stop based on validation loss.
-        Return True if the latest validation loss is not improving for `patience` epochs.
+        Return True if the best (minimum) validation loss occurred more than
+        `patience` epochs ago (i.e. no new minimum in the last `patience` epochs).
         """
-        if len(self.validation_losses) < patience:
+        losses = self.validation_losses
+        if len(losses) < patience + 1:
             return False
-        latest_loss = self.validation_losses[-1]
-        previous_losses = self.validation_losses[:-1]
-        return all(latest_loss <= loss for loss in previous_losses[-patience:])
+        
+        best_idx = min(range(len(losses)), key=lambda i: losses[i])
+        if best_idx < len(losses) - patience:
+            return True
+        return False
 
     def save_model(self, epoch: int = 0, stats = True):
         """
