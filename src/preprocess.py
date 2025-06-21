@@ -101,11 +101,34 @@ def preprocess_data(
 
     return raw
 
+
+def epoch_data(
+    raw: mne.io.Raw, epoch_length_sec: float = 1.0, preload: bool = True
+) -> mne.Epochs:
+    """
+    Divide continuous raw data into fixed-length epochs.
+    epoch_length_sec: length of each epoch in seconds (default 1.0s)
+    """
+    # create synthetic events every `epoch_length_sec`
+    events = mne.make_fixed_length_events(raw, duration=epoch_length_sec)
+    epochs = mne.Epochs(
+        raw,
+        events,
+        tmin=0.0,
+        tmax=epoch_length_sec,
+        baseline=None,
+        preload=preload,
+        verbose=False,
+    )
+    return epochs
+
+
 def load_to_preprocessed(
     subjects: dict[str, mne.io.Raw],
     target_approx_sfreq: float = 250.0,
     bandpass: tuple[float, float] = (30.0, 50.0),
     notch_filter: list[float] = [50.0, 100.0],
+    epoch_length_sec: float = 1.0,
     save_path: str = TRAIN_DATA_DIR,
 ) -> mne.io.Raw:
     """
@@ -118,8 +141,9 @@ def load_to_preprocessed(
         print(f"Preprocessing data for {subj}")
         raw.load_data() 
         raw = preprocess_data(raw, target_approx_sfreq, bandpass, notch_filter)
+        epochs = epoch_data(raw, epoch_length_sec=epoch_length_sec)
         preprocessed_file = os.path.join(save_path, f"{subj}_preprocessed_raw.fif")
-        raw.save(preprocessed_file, overwrite=True)
+        epochs.save(preprocessed_file, overwrite=True)
 
 
 def main():
