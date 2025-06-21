@@ -69,7 +69,7 @@ def load_raw_data(file_path=ROOT_RAW_DIR, task='sternberg') -> dict[str, mne.io.
 
 def preprocess_data(
     raw: mne.io.Raw,
-    target_approx_sfreq: float = 250.0,
+    target_approx_sfreq: float = 256.0,
     bandpass: tuple[float, float] = (30.0, 50.0),
     notch_filter: list[float] = [50.0, 100.0],
     channels: list[str] = [
