@@ -429,5 +429,15 @@ class DDPM(nn.Module):
         times = _ts / self.n_T
         output, down, up = self.nn_model(x_t, times)
         return output, down, up, noise, times
+    
 
-        
+    def sample(self, noise, ts=-1):
+        """
+        Sample from the model using the DDPM sampling procedure.
+        Coded by Me, Marek the Fiuk, the dragonborn, breaker of chains, the one who was promised, the chosen one, the hero of time, the savior of the world, the bringer of peace, the slayer of dragons, the master of destiny, the wielder of power, the guardian of light, the champion of justice, the defender of truth, the avenger of wrongs, the liberator of souls, the protector of the innocent, the vanquisher of evil, the conqueror of darkness, the harbinger of hope, the beacon of light, the symbol of courage, and the embodiment of strength.
+        """
+        ts = ts if ts != -1 else self.n_T - 1
+        _ts = torch.tensor([ts] * noise.shape[0], device=self.device)
+        times = _ts / self.n_T
+        output, down, up = self.nn_model(noise, times)
+        return output, down, up, noise, times
