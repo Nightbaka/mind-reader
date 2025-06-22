@@ -130,6 +130,15 @@ def load_to_preprocessed(
     notch_filter: list[float] = [50.0, 100.0],
     epoch_length_sec: float = 1.0,
     save_path: str = TRAIN_DATA_DIR,
+    channels: list[str] = [
+        "Fp1", "Fp2", "F3", "F4",
+        "O1", "O2",
+        "T7", "T8",
+        "P3", "P4",
+        "C1", "C2",
+        "F10", "F9",
+        "P9", "P10"
+    ]
 ) -> mne.io.Raw:
     """
     Load and preprocess the raw data.
@@ -140,17 +149,25 @@ def load_to_preprocessed(
     for subj, raw in subjects.items():
         print(f"Preprocessing data for {subj}")
         raw.load_data() 
-        raw = preprocess_data(raw, target_approx_sfreq, bandpass, notch_filter)
+        raw = preprocess_data(raw, target_approx_sfreq, bandpass, notch_filter, channels)
         epochs = epoch_data(raw, epoch_length_sec=epoch_length_sec)
         preprocessed_file = os.path.join(save_path, f"{subj}_preprocessed_raw.fif")
         epochs.save(preprocessed_file, overwrite=True)
 
 
-def main():
+def main(channels: list[str] = [
+        "Fp1", "Fp2", "F3", "F4",
+        "O1", "O2",
+        "T7", "T8",
+        "P3", "P4",
+        "C1", "C2",
+        "F10", "F9",
+        "P9", "P10"
+    ]):
     fix_dataset()
     subjects = load_raw_data()
     print(f"Raw data loaded of {len(subjects)} subjects. Starting preprocessing...")
-    load_to_preprocessed(subjects)
+    load_to_preprocessed(subjects, channels=channels)
     print("Preprocessing complete.")
 
 if __name__ == '__main__':

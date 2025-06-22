@@ -14,20 +14,27 @@ MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
 
 class EpochsDataset(Dataset):
     """Wrap an MNE Epochs object as a torch Dataset of (n_channels, n_times) tensors."""
-    def __init__(self, epochs: mne.Epochs, use_zscore: bool = False):
+    def __init__(self, epochs: mne.Epochs, use_zscore: bool = False, single_channel=False, scale_factor: float = 1.0):
         # epochs.get_data() → shape (n_epochs, n_channels, n_times)
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         data = epochs.get_data()
         self.data = torch.from_numpy(data).float().contiguous()
+        self.single_channel = single_channel
         if use_zscore:
             self.data = zscore_norm(self.data)
+
+        if scale_factor != 1.0:
+            self.data = self.data / scale_factor
 
 
     def __len__(self):
         return self.data.shape[0]
 
     def __getitem__(self, idx):
-        return self.data[idx]
+        x = self.data[idx]
+        if self.single_channel:
+            x = x[0:1, :]
+        return x
 
 
 def zscore_norm(data):
@@ -51,7 +58,9 @@ def get_datasets(
     val: float = 0.1,
     test: float = 0.1,
     seed: int = globals.SEED,
-    use_zscore: bool = False
+    use_zscore: bool = False,
+    single_channel: bool = False,
+    scale_factor: float = 1.0
 ) -> tuple[Dataset, Dataset, Dataset]:
     """
     Load all .fif epoch files from `epoch_dir`, wrap them in EpochsDataset,
@@ -67,7 +76,7 @@ def get_datasets(
     for fname in all_files:
         path = os.path.join(epoch_dir, fname)
         epochs = mne.read_epochs(path, preload=True, verbose=False)
-        datasets.append(EpochsDataset(epochs, use_zscore=use_zscore))
+        datasets.append(EpochsDataset(epochs, use_zscore=use_zscore, single_channel=single_channel, scale_factor=scale_factor))
 
     if train + val + test != 1.0 or train < 0 or val < 0 or test < 0:
         raise ValueError("train, val, and test proportions must sum to 1.0")
@@ -269,5 +278,162 @@ def get_dataloader(
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        pin_memory=pin_memory
+        pin_memory=pin_memory,
+        drop_last=True
     )
+
+
+import os
+import torch
+import json
+import matplotlib.pyplot as plt
+from torch.nn.functional import mse_loss
+from torch.utils.tensorboard import SummaryWriter
+
+from src.vaeeg import kl_loss, recon_loss, VAEEG
+
+class VAEEGTrainer:
+    def __init__(
+        self,
+        model: VAEEG,
+        device: torch.device = None,
+        log_dir: str = "runs/vaeeeg_experiment",
+        save_path: str = "models",
+        model_name: str = "vaeeeg_model",
+        beta: float = 1e-3,
+    ):
+        self.model = model
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+        self.save_path = save_path
+        self.model_name = model_name
+        self.beta = beta
+        self.writer = SummaryWriter(log_dir=log_dir)
+        self.train_losses = []
+        self.val_losses = []
+        self.best_val_loss = float("inf")
+
+    def train(
+        self,
+        train_loader,
+        val_loader,
+        optimizer,
+        num_epochs: int = 100,
+        patience: int = 10,
+        save_model: bool = True,
+    ):
+        patience_counter = 0
+        sample_batch = next(iter(val_loader)).to(self.device)
+
+        for epoch in range(num_epochs):
+            self.model.train()
+            train_recon_loss = 0.0
+            train_kl_loss = 0.0
+
+            for batch in train_loader:
+                x = batch.to(self.device)
+                optimizer.zero_grad()
+
+                mu, log_var, x_bar = self.model(x)
+
+                r_loss = recon_loss(x, x_bar)
+                k_loss = kl_loss(mu, log_var)
+                loss = r_loss + self.beta * k_loss
+
+                loss.backward()
+                optimizer.step()
+
+                train_recon_loss += r_loss.item()
+                train_kl_loss += k_loss.item()
+
+            avg_train_recon = train_recon_loss / len(train_loader)
+            avg_train_kl = train_kl_loss / len(train_loader)
+            avg_train_total = avg_train_recon + self.beta * avg_train_kl
+
+            self.writer.add_scalar("Loss/Train_Recon", avg_train_recon, epoch)
+            self.writer.add_scalar("Loss/Train_KL", avg_train_kl, epoch)
+            self.writer.add_scalar("Loss/Train_Total", avg_train_total, epoch)
+
+            # --- Validation ---
+            self.model.eval()
+            val_recon_loss = 0.0
+            val_kl_loss = 0.0
+
+            with torch.no_grad():
+                for batch in val_loader:
+                    x = batch.to(self.device)
+                    mu, log_var, x_bar = self.model(x)
+                    val_recon_loss += recon_loss(x, x_bar).item()
+                    val_kl_loss += kl_loss(mu, log_var).item()
+
+            avg_val_recon = val_recon_loss / len(val_loader)
+            avg_val_kl = val_kl_loss / len(val_loader)
+            avg_val_total = avg_val_recon + self.beta * avg_val_kl
+
+            self.train_losses.append(avg_train_total)
+            self.val_losses.append(avg_val_total)
+
+            self.writer.add_scalar("Loss/Val_Recon", avg_val_recon, epoch)
+            self.writer.add_scalar("Loss/Val_KL", avg_val_kl, epoch)
+            self.writer.add_scalar("Loss/Val_Total", avg_val_total, epoch)
+
+            # self._plot_sample_reconstruction(sample_batch, epoch)
+
+            print(
+                f"[{epoch+1}/{num_epochs}] Train: {avg_train_total:.4f}, "
+                f"Val: {avg_val_total:.4f}"
+            )
+
+            # Early stopping and saving
+            if avg_val_total < self.best_val_loss:
+                self.best_val_loss = avg_val_total
+                patience_counter = 0
+                if save_model:
+                    self._save_model(epoch)
+            else:
+                patience_counter += 1
+                print(f"⚠️ No improvement. Patience {patience_counter}/{patience}")
+                if patience_counter >= patience:
+                    print("🛑 Early stopping triggered.")
+                    break
+
+            self._save_stats()
+
+        self.writer.close()
+
+    def _save_model(self, epoch: int):
+        print(f"✅ Saving best model at epoch {epoch}")
+        path = os.path.join(self.save_path, self.model_name)
+        os.makedirs(path, exist_ok=True)
+        torch.save(self.model.state_dict(), os.path.join(path, f"{epoch}.pt"))
+
+    def _save_stats(self):
+        path = os.path.join(self.save_path, self.model_name)
+        os.makedirs(path, exist_ok=True)
+        stats = {
+            "train_losses": self.train_losses,
+            "val_losses": self.val_losses
+        }
+        with open(os.path.join(path, "stats.json"), "w") as f:
+            json.dump(stats, f, indent=4)
+
+    def _plot_sample_reconstruction(self, sample, epoch):
+        self.model.eval()
+        with torch.no_grad():
+            mu, log_var, recon = self.model(sample)
+            recon_signal = recon[0, 0].cpu().numpy()
+            original_signal = sample[0, 0].cpu().numpy()
+
+        plt.figure(figsize=(10, 4))
+        plt.plot(original_signal, label="Original")
+        plt.plot(recon_signal, label="Reconstructed", alpha=0.75)
+        plt.legend()
+        plt.title("Reconstruction Comparison")
+        plt.xlabel("Time [samples]")
+        plt.ylabel("Amplitude")
+        plt.tight_layout()
+
+        path = os.path.join(self.save_path, self.model_name)
+        os.makedirs(path, exist_ok=True)
+        plt.savefig(os.path.join(path, f"reconstruction_epoch{epoch+1}.png"))
+        plt.close()

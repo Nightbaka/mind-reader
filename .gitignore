@@ -194,3 +194,7 @@ cython_debug/
 .cursorindexingignore
 
 data/
+workspace/
+plots/
+runs/
+plans
