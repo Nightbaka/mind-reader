@@ -178,6 +178,17 @@ class DDPMTrainer:
         version_path = os.path.join(model_path, f"{epoch}.pt")
         torch.save(self.model.state_dict(), version_path)
 
+    def load_model(self, epoch: int = 0):
+        """
+        Load the model state dictionary from a file.
+        """
+        model_path = os.path.join(self.save_path, self.model_name, f"{epoch}.pt")
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"Model file {model_path} does not exist.")
+        print(f"Loading model {self.model_name} from {model_path}")
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        self.model.to(self.device)
+
     def save_stats(self):
         if not os.path.exists(self.save_path):
             os.makedirs(self.save_path)
