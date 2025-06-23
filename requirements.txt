@@ -1,0 +1,8 @@
+matplotlib
+mne
+numpy
+scikit-learn
+scipy
+torch
+torchvision
+tensorboard
