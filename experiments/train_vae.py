@@ -21,8 +21,6 @@ if not os.path.exists("plots"):
     os.makedirs("plots")
 
 
-writer = SummaryWriter(log_dir="runs/vaeeeg_experiment")
-
 
 train_ds, val_ds, test_ds = training.get_datasets(use_zscore=True, single_channel=True, scale_factor=3)
 train_loader, val_loader, test_loader = training.get_loaders(train_ds, val_ds, test_ds, num_workers=8)
@@ -36,10 +34,12 @@ sample = sample[:, 0:1, :]
 
 
 # Hiperparametry
-z_dim = 16
+z_dim = 192
 lr = 1e-3
 num_epochs = 200
 beta = 1e-3  # dostosowane do skali danych i błędu MSE
+
+writer = SummaryWriter(log_dir=f"runs/vaeeeg_experiment_z_dim_{z_dim}")
 
 # Model
 model = VAEEG(in_channels=1, z_dim=z_dim).to(device)
@@ -114,7 +114,7 @@ for epoch in tqdm(range(num_epochs), desc='Training'):
         plt.xlabel("Czas [ms]")
         plt.ylabel("Amplituda")
         plt.tight_layout()
-        plt.savefig(f"plots/comparison_epoch{epoch+1}_latent_dim{z_dim}.png")
+        plt.savefig(f"plots/comparison_latent_dim{z_dim}_epoch{epoch+1}.png")
 
     avg_val_recon = val_recon_loss / len(val_loader)
     avg_val_kl = val_kl_loss / len(val_loader)
